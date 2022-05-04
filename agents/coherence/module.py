@@ -7,6 +7,7 @@ from transformers import BertTokenizer, AutoTokenizer, AutoModelForSequenceClass
 import torch.nn.functional as F
 import numpy as np
 import re
+import wandb
 
 class agent(nn.Module):
     def __init__(self, config, prompt, bot):
@@ -160,7 +161,9 @@ class agent(nn.Module):
                 print_conv.append([templit, self.prompt.tokenizer.decode(self.prompt.tokenizer.encode(model_response[j],add_prefix_space=True)), bot_response[j][0]])
             else:
                 print_conv.append([templit, model, bot_response[j][0]])
+
         coherence = self.coherence_reward(first_input_string, conversation)
+       # print(coherence)
         if self.type == "emotion":
             predict_list = self.emotion_reward(conversation)
         elif self.type == "word":
@@ -171,15 +174,17 @@ class agent(nn.Module):
         rpt = [0]
         rpt = np.array(rpt)
         score = 0
+        for coherence_score in coherence:
+            score += self.args.coh_r * coherence_score
         tempscore = []
         step = 0
         if self.type == "emotion":
             for task_dict in predict_list:
                 if isinstance(task, str):
-                    score += task_dict[task[1:-1]]
+                    score += 1 * task_dict[task[1:-1]]
                     tempscore.append(task_dict[task[1:-1]])
                 elif isinstance(task, list):
-                    score += task_dict[task[step][1:-1]]
+                    score += 1 * task_dict[task[step][1:-1]]
                     tempscore.append(task_dict[task[step][1:-1]])
                 else:
                     raise 
@@ -187,21 +192,21 @@ class agent(nn.Module):
         elif self.type == "word":
             for s in predict_list:
                 if isinstance(task, str):
-                    score += s
+                    score += 1 * s
                     tempscore.append(s)
 
         batchwise_pt_len_rewards= []
         reward_collect = []
         r_mean = 0
         r_std = 0
+        score_emo = np.array(tempscore)
 
         if not isinstance(model, str):
             step +=1
-            score_emo = np.array(tempscore)
             rewards = [[] for i in range(batch_size)]
 
             for i in range(batch_size):
-                reward = score_emo[i] + self.args.coh_r * coherence[i]
+                reward = 1 * score_emo[i] + self.args.coh_r * coherence[i]
                 num = self.args.max_pt_len if eos_index[i] >= self.args.max_pt_len else eos_index[i] 
                 discount_reward = 0
                 for j in range(num):
@@ -242,6 +247,8 @@ class agent(nn.Module):
                         'flatten_actions': flatten_actions,
                         'flatten_mask': flatten_mask,
                         'flatten_rewards': flatten_rewards,
+                        'controllable_score': np.sum(score_emo),
+                        'coherence_score': sum(coherence),
                         'r_mean': r_mean,
                         'r_std': r_std,
                         'eos_index': eos_index,
@@ -334,19 +341,19 @@ class agent(nn.Module):
             if cur_size == 0:
                 break
             mse += index_mse
-            total_entropy += torch.mean(-self.args.ep_lr * dist_entropy).item()
+            total_entropy += torch.mean(-0.01* dist_entropy).item()
             entropy += index_et
             pg_loss += index_pg 
             
-        pg_loss /= outter_count
-        mse /= outter_count
-        entropy /= outter_count
-        loss = pg_loss + mse + entropy
+        pg_loss /= (outter_count + 1e-9)
+        mse /= (outter_count + 1e-9)
+        entropy /= (outter_count + 1e-9)
+        loss = pg_loss + mse# + entropy
 
         flatten_dict["contrastive"] = contrastive_list
         flatten_dict["length"] = length_list
 
-        return loss, flatten_dict, mse.item(), pg_loss.item(), total_entropy
+        return loss, flatten_dict, mse.item() if not isinstance(mse, float) else mse, pg_loss.item() if not isinstance(pg_loss, float) else pg_loss, total_entropy
 
 
     def emotion_reward(self, sentences):
@@ -367,20 +374,40 @@ class agent(nn.Module):
         for j in range(len(sentences)):
             tmp = topic
             if topic[0] != '<' and topic[-1] != '>':
-                tmp = '<' + topic + '>'
+                tmp =  '<' + topic + ">"
             for word in self.word_dict[tmp]:
                 if ')' in word or '(' in word: continue
                 score[j] += len(re.findall(r"\b{}\b".format(word.lower()), sentences[j].lower().strip()))
-
+        
         avg = np.sum(score)
         return score
     
     def coherence_reward(self, contexts, sentences):
         prepared_input = []
         for context, sentence in zip(contexts, sentences):
+        #    print(context, sentence)
             prepared_input.append(context + "<|endoftext|>" + sentence)
         encoded_input = self.coherence_tokenizer(prepared_input, padding=True, return_tensors='pt').to(self.device)
         outputs = self.coherence_model(**encoded_input, return_dict=True)
         scores = torch.sigmoid(outputs.logits)
-        return scores[:, 0].detach().cpu()
+     #   print(scores)
+        return scores[:, 0].detach().cpu().numpy()
 
+    def log_wandb(self, flatten_dicts, total_loss, total_mse, total_pg, total_entropy, batch):
+        meta_total = len(flatten_dicts)
+        training_score = 0
+        coherence_score = 0
+        control_score = 0
+        for score in flatten_dicts:
+            
+            training_score += score['score']
+            control_score += score['controllable_score']
+            coherence_score  += score['coherence_score']
+      #  print(training_score, control_score, coherence_score)
+        wandb.log({'outerloss': total_loss / meta_total , \
+                    'outermse': total_mse / meta_total, \
+                    'outerpg': total_pg / meta_total, \
+                    'outerentropy': total_entropy / meta_total, \
+                    'outerscore': training_score / self.args.bz / meta_total, \
+                    'controllable_score':control_score / self.args.bz / meta_total, \
+                    'coherence_score': coherence_score / self.args.bz / meta_total}, step=batch)

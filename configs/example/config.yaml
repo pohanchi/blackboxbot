@@ -18,5 +18,5 @@ model: null
 save_path: result/example
 extra_label: train_word_list.txt #test_word_list.txt # None
 prompt: example
-path: ../DialoGPT3/data/dd_train.txt
+path: ./data/dd_train.txt
 

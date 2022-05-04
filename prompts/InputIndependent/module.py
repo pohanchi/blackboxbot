@@ -55,7 +55,7 @@ class prompt(base):
         prev_sentence = '<|endoftext|>'
         hidden_list = []
         # generate emotion task word as prev_input 
-        prev_input = torch.LongTensor([self.tokenizer.encode(task) for _ in range(inputs_id.shape[0])]).to(device)
+        prev_input = torch.LongTensor([self.tokenizer.encode(task) for _ in range(inputs_id.shape[0])]).to(self.device)
         _, past = model(prev_input, past=None)
         position_ids = mask.long().cumsum(-1) - 1 + prev_input.shape[1]
         position_ids.masked_fill_(mask == 0, 1).to(self.device)

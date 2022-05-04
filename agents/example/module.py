@@ -7,7 +7,7 @@ from transformers import BertTokenizer
 import torch.nn.functional as F
 import numpy as np
 import re
-
+import wandb
 class agent(nn.Module):
     def __init__(self, config, prompt, bot):
         super().__init__()
@@ -334,8 +334,8 @@ class agent(nn.Module):
             entropy += torch.mean(-self.args.ep_lr * dist_entropy).item()
             pg_loss += index_pg 
             
-        pg_loss /= outter_count
-        mse /= outter_count
+        pg_loss /= (outter_count + 1e-9)
+        mse /= (outter_count + 1e-9)
         loss = pg_loss + mse
 
         flatten_dict["contrastive"] = contrastive_list
@@ -368,3 +368,19 @@ class agent(nn.Module):
 
         avg = np.sum(score)
         return score
+    def log_wandb(self, flatten_dicts, total_loss, total_mse, total_pg, total_entropy, batch):
+        meta_total = len(flatten_dicts)
+        training_score = 0
+        coherence_score = 0
+        control_score = 0
+        for score in flatten_dicts:
+            training_score += score['score']
+
+        wandb.log({'outerloss': total_loss / meta_total , \
+                    'outermse': total_mse / meta_total, \
+                    'outerpg': total_pg / meta_total, \
+                    'outerentropy': total_entropy / meta_total, \
+                    'outerscore': training_score / self.args.bz / meta_total}, \
+                 #   'controllable_score':control_score / self.args.bz / meta_total, \
+                 #   'coherence_score': coherence_score / self.args.bz / meta_total} \ 
+                    step=batch)

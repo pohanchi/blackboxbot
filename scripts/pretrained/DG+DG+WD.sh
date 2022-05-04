@@ -7,16 +7,16 @@ CUDA_VISIBLE_DEVICES=0 python main.py \
                        --bot DialogGPT \
                        --type word \
                        --exp_name word-pretrain \
-                       --save_path debug-word \
+                       --save_path word-pretrain \
                        --model microsoft/DialoGPT-medium \
                        --log_interval 25 \
                        --seed 100 \
                        --bz 8 \
                        --k_epoch 5 \
-                       --discount_r 0.98 \
-                       --end_batch 4 \
-                       --sample_time 1 \
+                       --discount_r 0.97 \
+                       --end_batch 51 \
+                       --sample_time 8 \
                        --max_pt_len 10 \
                        --tags debug \
-                       --save_interval 2
-
+                       --save_interval 25 \
+                       --coh_r $1

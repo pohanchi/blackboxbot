@@ -46,7 +46,7 @@ def main():
         raise
     
     wandb.init(project='emnlp', tags=tags, name=args.exp_name, entity="naacl_maml_prompt")
-    # wandb.config.update(args)
+    wandb.config.update(args)
 
     agent = importlib.import_module('.module', f"agents.{args.agent}").agent
     prompt = importlib.import_module(".module",f"prompts.{args.prompt}").prompt
@@ -85,7 +85,7 @@ def main():
         if batch <= args.end_batch:
             
             sample_dicts = []
-
+            scores = []
             for idx, task in enumerate(meta_total):
                 for s in range(args.sample_time):
                     flatten_dict = Agent.sample_forward(inputs_id, mask, \
@@ -137,7 +137,7 @@ def main():
                         total_pg += pg_loss
                         total_entropy += entropy
                         total_score += score['score']
-
+                        scores.append(score)
                 Prompt.model.zero_grad()
                 Prompt.state_network.zero_grad()
 
@@ -146,18 +146,18 @@ def main():
                     tqdm.write(f"[Outer score in batch {batch}]: {round(total_score/args.bz/len(meta_total), 4)}")
                 tqdm.write(f"outerloss in batch {batch}: {round(total_loss/args.bz/len(meta_total), 4)}")
                 tqdm.write(f"outerscore in batch {batch}: {round(total_score/args.bz/len(meta_total), 4)}")
-                wandb.log({'outerloss': total_loss / len(meta_total) , \
-                    'outermse': total_mse / len(meta_total), \
-                    'outerpg': total_pg / len(meta_total), \
-                    'outerentropy': total_entropy / len(meta_total), \
-                    'outerscore': total_score / args.bz / len(meta_total)}, step=batch)
+                Agent.log_wandb(scores, total_loss, total_mse, total_pg, total_entropy, batch)
+                # wandb.log({'outerloss': total_loss / len(meta_total) , \
+                #     'outermse': total_mse / len(meta_total), \
+                #     'outerpg': total_pg / len(meta_total), \
+                #     'outerentropy': total_entropy / len(meta_total), \
+                #     'outerscore': total_score / args.bz / len(meta_total)}, step=batch)
             else:
-                
+                total_scores = []
                 for flatten_dict in sample_dicts:
-                    total_score += flatten_dict['score']
+                    total_scores.append(flatten_dict)
                 
-                wandb.log({\
-                    'outerscore': total_score / args.bz / len(meta_total)}, step=batch)
+                Agent.log_wandb(total_scores, 0, 0, 0, 0, batch)
 
             if batch % args.save_interval == 0:
                 
@@ -177,24 +177,26 @@ def main():
                                 f.write(sample_prompt + ", " + sample_sentence + ", " + sample_bot + '\n')    
                 else:
 
-                    dest = f"results/{args.save_path}/"
-                    os.makedirs(dest, exist_ok=True)
-                    
-                    save_args = deepcopy(args)
-                    del save_args.device
-                    with open(f'{dest}/args.txt', 'w') as f:
-                        json.dump(save_args.__dict__, f, indent=2)
+                    if batch in [50, 500]:
 
-                    torch.save(
-                        {k: (v.cpu() if v is not None else None)  # save to cpu tensors
-                            for k, v in Prompt.model.state_dict().items()},
-                        join(f'results/{args.save_path}/',
-                                f'checkpoint-step-{batch}-prompt.pkl'))
-                    torch.save(
-                        {k: (v.cpu() if v is not None else None)  # save to cpu tensors
-                            for k, v in Prompt.state_network.state_dict().items()},
-                        join(f'results/{args.save_path}/',
-                                f'checkpoint-step-{batch}-value.pkl'))
+                        dest = f"results/{args.save_path}/"
+                        os.makedirs(dest, exist_ok=True)
+                        
+                        save_args = deepcopy(args)
+                        del save_args.device
+                        with open(f'{dest}/args.txt', 'w') as f:
+                            json.dump(save_args.__dict__, f, indent=2)
+
+                        torch.save(
+                            {k: (v.cpu() if v is not None else None)  # save to cpu tensors
+                                for k, v in Prompt.model.state_dict().items()},
+                            join(f'results/{args.save_path}/',
+                                    f'checkpoint-step-{batch}-prompt.pkl'))
+                        torch.save(
+                            {k: (v.cpu() if v is not None else None)  # save to cpu tensors
+                                for k, v in Prompt.state_network.state_dict().items()},
+                            join(f'results/{args.save_path}/',
+                                    f'checkpoint-step-{batch}-value.pkl'))
 
         if batch > args.end_batch:
             break
@@ -206,7 +208,7 @@ def set_arguments(parser):
     parser.add_argument("--bot", type=str, default="example")
     parser.add_argument("--prompt", type=str, default="DialogGPT")
     parser.add_argument("--dataset", type=str, default="example") # for finetune task
-    parser.add_argument("--path", type=str, default="../DialoGPT3/data/dd_train.txt", help="path for dataset")
+    parser.add_argument("--path", type=str, default="./data/dd_train.txt", help="path for dataset")
     parser.add_argument("--mode", type=str, default="test", help="The current option is [ 'pretrain', 'finetune', 'test' ]")
     parser.add_argument("--type", type=str, default=None, help="The current option is [ 'word', 'emotion' ]")
     parser.add_argument("--exp_name", type=str, default="")
@@ -226,7 +228,7 @@ def set_arguments(parser):
     parser.add_argument('--max_pt_len', help="maximum prompt length", type=int, default=10)
     parser.add_argument("--mse_lr", type=float, default=1)
     parser.add_argument("--ep_lr", type=float, default=0.01)
-    parser.add_argument("--coh_r", type=float, default=3)
+    parser.add_argument("--coh_r", type=float, default=0.01)
     parser.add_argument("--num_testing", type=int, default=1)
     parser.add_argument("--iters", type=str, default=25)
     parser.add_argument("--tags", type=str, default=None)

@@ -15,10 +15,15 @@ class prompt(base):
         """
         self.config = config
         self.device = config.device
-        self.tokenizer = GPT2Tokenizer.from_pretrained('microsoft/DialoGPT-medium')        
-        self.model = f"Make the following dialogue full of {config.task}: "
-        self.model_demo = f"Make the following dialogue full of {config.task}: "
-        self.state_network_demo = f"Make the following dialogue full of {config.task}: "
+        self.tokenizer = GPT2Tokenizer.from_pretrained('microsoft/DialoGPT-medium') 
+
+        input_task = config.task
+        if config.task[0] == '<' and config.task[-1] == ">":
+            input_task = config.task[1:-1]
+
+        self.model = f"Make the following dialogue full of {input_task}: "
+        self.model_demo = f"Make the following dialogue full of {input_task}: "
+        self.state_network_demo = f"Make the following dialogue full of {input_task}: "
     
     def prepare_input(self, task, input_ids, mask, model):
 

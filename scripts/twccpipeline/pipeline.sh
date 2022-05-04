@@ -1,10 +1,10 @@
 source ~/.bashrc
-pushd /work/b04203058/blackboxbot
-conda activate base
-curid=${1:-" "}
+pushd /work/twsqfkt532/blackboxbot
+conda activate pohan
 
-task=$2
-mode=$3
+task=$1
+mode=$2
+agent=$3
 prompt=$4
 bot=$5
 type=$6
@@ -17,6 +17,7 @@ save_path=${12}
 model=${13}
 extra_label=${14}
 save_interval=${15}
+curid=${16:-" "}
 
 if [ -z ${extra_label} ]; 
 then
@@ -24,8 +25,9 @@ then
 fi
 
 echo "container ID = ${curid}"
-echo "task name = ${2},"
-echo "mode= ${3},"
+echo "task name = ${1},"
+echo "mode= ${2},"
+echo "agent= ${3}"
 echo "prompt = ${4},"
 echo "bot = ${5},"
 echo "type = ${6},"
@@ -41,13 +43,18 @@ echo "save_interval = ${15}"
 
 sleep 15
 echo "exec script = scripts/${mode}/general.sh"
+
+if [[ ${task:1:1} != '<' && ${type} == "emotion" ]] 
+then
+    task="<$task>"
+fi
 # current not support mode = pretrain
-bash ./scripts/${mode}/general.sh $1 $2 $3 $4 $5 $6 $7 $8 $9 ${10} ${11} ${12} ${13} ${extra_label} ${15}
+bash ./scripts/${mode}/general.sh $curid $task $2 $3 $4 $5 $6 $7 $8 ${9} ${10} ${11} ${12} ${13} ${extra_label} ${15}
 popd
 
 sleep 15
 
-if [ ${curid} != "NULL" ];
+if [[ ${curid} != "NULL" ]]
 then
 source ~/.bashrc; twccrm "$curid"
 fi
